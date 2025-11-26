@@ -8,7 +8,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart'; // Added ScreenUtil
 import 'package:cleanmind/auth/auth_service.dart';
 import 'package:cleanmind/core/apptheme.dart';
 import 'package:cleanmind/core/globals.dart';
-import 'package:cleanmind/legal_screen.dart';
 import 'package:cleanmind/utilis/snackbar.dart';
 
 class PricingPage extends StatefulWidget {
@@ -70,9 +69,20 @@ class _PricingPageState extends State<PricingPage> {
   }
 
   Future<void> _initIAP() async {
+    debugPrint("🛒 Initializing IAP...");
+    
     final available = await _iap.isAvailable();
-    if (!mounted || !available) return;
+    debugPrint("🛒 IAP available: $available");
+    
+    if (!mounted) return;
+    
+    if (!available) {
+      debugPrint("❌ IAP not available on this device");
+      Utilis.showSnackBar("In-App Purchases not available", isErr: true);
+      return;
+    }
 
+    debugPrint("🛒 Querying products...");
     final response = await _iap.queryProductDetails({
       "cleanmind_premium_monthly_users",
       "cleanmind_premium_yearly",
@@ -80,36 +90,37 @@ class _PricingPageState extends State<PricingPage> {
 
     if (!mounted) return;
 
+    debugPrint("🛒 Products found: ${response.productDetails.length}");
+    debugPrint("🛒 Not found IDs: ${response.notFoundIDs}");
+    
+    if (response.error != null) {
+      debugPrint("❌ Product query error: ${response.error}");
+    }
+
     if (response.productDetails.isNotEmpty) {
       setState(() {
         _products = response.productDetails;
-        _selected = _products.firstWhere(
-          (p) => p.id.contains("monthly"),
-          orElse: () => _products.first,
-        );
+        // Find monthly product or default to first
+        ProductDetails? monthly;
+        for (final p in _products) {
+          debugPrint("🛒 Product: ${p.id} - ${p.price}");
+          if (p.id.contains("monthly")) {
+            monthly = p;
+          }
+        }
+        _selected = monthly ?? _products.first;
+        debugPrint("🛒 Selected: ${_selected?.id}");
       });
     } else {
-      setState(() {
-        _products = [
-          ProductDetails(
-            id: "cleanmind_premium_monthly_users",
-            title: "Monthly Plan",
-            description: "Billed monthly",
-            price: "\$6.99",
-            rawPrice: 6.99,
-            currencyCode: "USD",
-          ),
-          ProductDetails(
-            id: "cleanmind_premium_yearly",
-            title: "Yearly Plan",
-            description: "Billed annually (save 46%)",
-            price: "\$44.99",
-            rawPrice: 44.99,
-            currencyCode: "USD",
-          ),
-        ];
-        _selected = _products.first;
-      });
+      // ❌ DON'T create fake products - they can't be purchased!
+      debugPrint("❌ No products returned from App Store");
+      debugPrint("   Make sure products are configured in App Store Connect");
+      debugPrint("   And approved for sale");
+      
+      Utilis.showSnackBar(
+        "Unable to load plans. Check your connection and try again.",
+        isErr: true,
+      );
     }
   }
 
@@ -292,11 +303,29 @@ class _PricingPageState extends State<PricingPage> {
   }
 
   void _buy() {
-    if (_selected == null) return;
+    if (_selected == null) {
+      debugPrint("❌ No product selected");
+      Utilis.showSnackBar("Please select a plan", isErr: true);
+      return;
+    }
+    
+    if (_products.isEmpty) {
+      debugPrint("❌ No products loaded from App Store");
+      Utilis.showSnackBar("Products not loaded. Please restart the app.", isErr: true);
+      return;
+    }
 
-    final params = PurchaseParam(productDetails: _selected!);
-    _iap.buyNonConsumable(purchaseParam: params);
-    setState(() => _pending = true);
+    debugPrint("🛒 Initiating purchase for: ${_selected!.id}");
+    
+    try {
+      final params = PurchaseParam(productDetails: _selected!);
+      _iap.buyNonConsumable(purchaseParam: params);
+      setState(() => _pending = true);
+    } catch (e) {
+      debugPrint("❌ Purchase initiation failed: $e");
+      Utilis.showSnackBar("Failed to start purchase: $e", isErr: true);
+      setState(() => _pending = false);
+    }
   }
 
   @override

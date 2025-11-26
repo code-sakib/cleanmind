@@ -66,7 +66,6 @@ class MyApp extends StatelessWidget {
           theme: AppTheme.theme,
           scaffoldMessengerKey: Utilis.messengerKey,
           debugShowCheckedModeBanner: false,
-          useInheritedMediaQuery: true,
         ),
       ),
     );
